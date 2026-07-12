@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DOOMPS — Admin</title>
+<style>
+:root{
+  --acid:#a4e21a; --acid-dk:#7fc40a; --swamp:#3d5a14; --swamp-dk:#1a2708;
+  --sludge:#e8641a; --tape:#c9d21a; --oil:#080b04; --bruise:#0a1005; --bruise-dk:#060a03;
+  --bone:#e8ecc8; --blood:#b53318;
+  --wl:#a4e21a; --fcfs:#c9d21a; --rug:#c23a1a;
+  --line: rgba(164,226,26,.16); --glow: 0 0 30px rgba(164,226,26,.35);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  background:radial-gradient(120% 80% at 50% 12%, #14210a 0%, #0a1005 45%, #060a03 100%);
+  color:var(--bone); min-height:100vh; padding:24px 16px 60px;
+}
+.wrap{max-width:1000px;margin:0 auto}
+h1{font-size:1.8rem;color:var(--acid);text-shadow:var(--glow);letter-spacing:.04em;margin-bottom:4px}
+.sub{color:var(--tape);font-size:.8rem;letter-spacing:.1em;text-transform:uppercase;margin-bottom:24px}
+a.home{color:var(--tape);text-decoration:none;font-size:.75rem}
+a.home:hover{color:var(--acid)}
+
+.gate{background:rgba(10,16,5,.6);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:24px}
+.gate .row{display:flex;gap:10px;flex-wrap:wrap}
+input[type=password],input[type=text]{
+  background:var(--bruise-dk);border:1px solid var(--line);color:var(--bone);
+  padding:10px 12px;border-radius:8px;font-family:inherit;font-size:.85rem;flex:1;min-width:200px;
+}
+input:focus{outline:none;border-color:var(--acid)}
+button{
+  background:var(--acid);color:var(--oil);border:none;padding:10px 18px;border-radius:8px;
+  font-weight:700;font-size:.78rem;letter-spacing:.04em;text-transform:uppercase;cursor:pointer;
+  font-family:inherit;
+}
+button:hover{background:var(--acid-dk)}
+button.ghost{background:none;border:1px solid var(--line);color:var(--tape)}
+button.ghost:hover{border-color:var(--acid);color:var(--acid)}
+button.danger{background:none;border:1px solid var(--blood);color:#e08a78}
+button.danger:hover{background:rgba(181,51,24,.15)}
+.msg{margin-top:10px;font-size:.8rem;color:var(--blood)}
+.msg.ok{color:var(--acid)}
+
+#dash{display:none}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+@media(max-width:640px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stat{background:rgba(10,16,5,.6);border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center}
+.stat .n{font-size:1.6rem;color:var(--acid);font-weight:700}
+.stat .l{font-size:.65rem;letter-spacing:.1em;text-transform:uppercase;color:var(--tape);margin-top:2px}
+
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:12px}
+.tab{padding:8px 14px;border-radius:8px;cursor:pointer;color:var(--tape);font-size:.78rem;font-weight:700;text-transform:uppercase}
+.tab:hover{color:var(--acid)}
+.tab.on{background:var(--acid);color:var(--oil)}
+.sec{display:none}
+.sec.on{display:block}
+
+.card{background:rgba(10,16,5,.6);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:12px}
+.card h2{font-size:.95rem;color:var(--acid);margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.subtle{color:var(--tape);font-size:.78rem;opacity:.8}
+
+table{width:100%;border-collapse:collapse;font-size:.75rem}
+th{text-align:left;color:var(--tape);text-transform:uppercase;font-size:.65rem;letter-spacing:.06em;padding:6px 8px;border-bottom:1px solid var(--line)}
+td{padding:7px 8px;border-bottom:1px solid rgba(164,226,26,.06);vertical-align:top;word-break:break-word}
+tr:hover td{background:rgba(164,226,26,.04)}
+.tbl-wrap{overflow-x:auto}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:.65rem;font-weight:700;text-transform:uppercase}
+.pill.WL{background:var(--wl);color:var(--oil)}
+.pill.FCFS{background:var(--fcfs);color:var(--oil)}
+.pill.RUG{background:var(--rug);color:var(--bone)}
+.pill.none{background:rgba(255,255,255,.08);color:var(--tape)}
+.mono{font-family:inherit;font-size:.72rem;color:var(--bone);opacity:.85}
+.linkish{color:var(--tape);text-decoration:none}
+.linkish:hover{color:var(--acid)}
+.verify-btn{padding:4px 10px;font-size:.65rem}
+.export-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.danger-zone{border-color:var(--blood)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <a class="home" href="https://doomps.xyz">← doomps.xyz</a>
+  <h1>DOOMPS Admin</h1>
+  <div class="sub">Sweep or be Swept — control room</div>
+
+  <div class="gate" id="gate">
+    <div class="row">
+      <input type="password" id="key" placeholder="Admin key" autocomplete="off">
+      <button id="unlockBtn">Unlock</button>
+    </div>
+    <div class="msg" id="gateMsg"></div>
+  </div>
+
+  <div id="dash">
+    <div class="stats" id="stats"></div>
+
+    <div class="tabs">
+      <div class="tab on" data-tab="entries">Entries</div>
+      <div class="tab" data-tab="wallets">Wallets</div>
+      <div class="tab" data-tab="export">Export</div>
+      <div class="tab" data-tab="danger">Danger Zone</div>
+    </div>
+
+    <div class="sec on" id="sec-entries">
+      <div class="card">
+        <h2>Entries <button class="ghost" onclick="refreshAll()">Refresh</button></h2>
+        <div class="tbl-wrap"><table id="entriesTable"><thead>
+          <tr><th>X Account</th><th>Proof</th><th>Verified</th><th>Wallet</th><th>Reward</th><th>Score</th><th>Entered</th></tr>
+        </thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="sec" id="sec-wallets">
+      <div class="card">
+        <h2>Wallets</h2>
+        <div class="tbl-wrap"><table id="walletsTable"><thead>
+          <tr><th>Address</th><th>X Account</th><th>Reward</th><th>Submitted</th></tr>
+        </thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <div class="sec" id="sec-export">
+      <div class="card">
+        <h2>Export</h2>
+        <div class="subtle">Downloads use your admin key automatically.</div>
+        <div class="export-row">
+          <button onclick="downloadFile('/api/admin/export/entries.csv')">Entries CSV</button>
+          <button onclick="downloadFile('/api/admin/export/wallets.csv')">Wallets CSV</button>
+          <button onclick="downloadFile('/api/admin/export/full.json')">Full JSON Backup</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec" id="sec-danger">
+      <div class="card danger-zone">
+        <h2>Danger Zone</h2>
+        <div class="subtle">Wipes ALL entries and wallets. Cannot be undone. Export a backup first.</div>
+        <div class="export-row">
+          <input type="text" id="wipeConfirm" placeholder='Type CONFIRM' style="max-width:180px">
+          <button class="danger" onclick="wipeAll()">Wipe All Data</button>
+        </div>
+        <div class="msg" id="wipeMsg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let ADMIN_KEY = '';
+
+// Same Render service as the API (sweep.doomps.xyz), so this defaults to
+// same-origin (empty string = relative /api/... calls). Override with
+// ?api=https://... for testing against a different backend.
+const API_BASE = (function(){
+  const params = new URLSearchParams(location.search);
+  return (params.get('api') || window.__DOOMPS_API__ || '').replace(/\/+$/,'');
+})();
+
+$('unlockBtn').addEventListener('click', unlock);
+$('key').addEventListener('keydown', e => { if (e.key === 'Enter') unlock(); });
+
+async function unlock() {
+  const key = $('key').value.trim();
+  if (!key) { $('gateMsg').textContent = 'Enter the admin key.'; return; }
+  ADMIN_KEY = key;
+  try {
+    await api('/api/admin/counts');
+    $('gate').style.display = 'none';
+    $('dash').style.display = 'block';
+    refreshAll();
+  } catch (e) {
+    $('gateMsg').textContent = e.message || 'Unauthorized.';
+  }
+}
+
+async function api(path, opts) {
+  const res = await fetch(API_BASE + path, Object.assign({}, opts, {
+    headers: Object.assign({ 'Authorization': 'Bearer ' + ADMIN_KEY, 'Content-Type': 'application/json' }, (opts && opts.headers) || {})
+  }));
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'));
+  document.querySelectorAll('.sec').forEach(x => x.classList.remove('on'));
+  t.classList.add('on');
+  $('sec-' + t.dataset.tab).classList.add('on');
+}));
+
+async function refreshAll() {
+  try {
+    const counts = await api('/api/admin/counts');
+    $('stats').innerHTML = `
+      <div class="stat"><div class="n">${counts.entries}</div><div class="l">Entries</div></div>
+      <div class="stat"><div class="n">${counts.wallets}</div><div class="l">Wallets</div></div>
+      <div class="stat"><div class="n">${counts.wl}</div><div class="l">WL Won</div></div>
+      <div class="stat"><div class="n">${counts.fcfs}</div><div class="l">FCFS Won</div></div>`;
+
+    const { entries } = await api('/api/admin/entries');
+    $('entriesTable').querySelector('tbody').innerHTML = entries.map(r => `
+      <tr>
+        <td>${esc(r.handle)}</td>
+        <td>${r.proof_url ? `<a class="linkish" href="${esc(r.proof_url)}" target="_blank" rel="noopener">view ↗</a>` : '<span class="subtle">—</span>'}</td>
+        <td><button class="verify-btn ${r.verified ? '' : 'ghost'}" onclick="toggleVerify('${esc(r.handle)}')">${r.verified ? 'Verified' : 'Unverified'}</button></td>
+        <td class="mono">${r.wallet ? esc(r.wallet) : '<span class="subtle">—</span>'}</td>
+        <td>${r.reward ? `<span class="pill ${esc(r.reward)}">${esc(r.reward)}</span>` : '<span class="pill none">none</span>'}</td>
+        <td class="subtle">${r.match_score || '—'}</td>
+        <td class="subtle">${r.entered_at ? new Date(r.entered_at).toLocaleString() : '—'}</td>
+      </tr>`).join('');
+
+    const { wallets } = await api('/api/admin/wallets');
+    $('walletsTable').querySelector('tbody').innerHTML = wallets.map(r => `
+      <tr>
+        <td class="mono">${esc(r.address)}</td>
+        <td>${esc(r.handle)}</td>
+        <td>${r.reward ? `<span class="pill ${esc(r.reward)}">${esc(r.reward)}</span>` : '—'}</td>
+        <td class="subtle">${r.submitted_at ? new Date(r.submitted_at).toLocaleString() : '—'}</td>
+      </tr>`).join('');
+  } catch (e) {
+    alert('Failed to load: ' + e.message);
+  }
+}
+
+async function toggleVerify(handle) {
+  try {
+    await api(`/api/admin/entries/${encodeURIComponent(handle)}/verify`, { method: 'PATCH' });
+    refreshAll();
+  } catch (e) { alert('Failed: ' + e.message); }
+}
+
+async function wipeAll() {
+  const confirmText = $('wipeConfirm').value.trim();
+  if (confirmText !== 'CONFIRM') { $('wipeMsg').textContent = 'Type CONFIRM exactly to proceed.'; return; }
+  if (!window.confirm('This permanently deletes ALL entries and wallets. Continue?')) return;
+  try {
+    await api('/api/admin/wipe', { method: 'DELETE', body: JSON.stringify({ confirm: 'CONFIRM' }) });
+    $('wipeMsg').className = 'msg ok';
+    $('wipeMsg').textContent = 'Wiped. Refreshing...';
+    $('wipeConfirm').value = '';
+    refreshAll();
+  } catch (e) {
+    $('wipeMsg').className = 'msg';
+    $('wipeMsg').textContent = 'Failed: ' + e.message;
+  }
+}
+
+function downloadFile(path) {
+  fetch(API_BASE + path, { headers: { 'Authorization': 'Bearer ' + ADMIN_KEY } })
+    .then(res => {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.blob();
+    })
+    .then(blob => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = path.split('/').pop();
+      a.click();
+    })
+    .catch(e => alert('Download failed: ' + e.message));
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+</script>
+</body>
+</html>
