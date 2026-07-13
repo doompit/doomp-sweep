@@ -665,23 +665,27 @@ const S = {
   handle:null, chosen:null, opponent:null, tier:null,
   outcome:null, reward:null,
   // best-of-3 match state
-  match:{ round:0, wins:0, losses:0, history:[], clinchTier:null, clinchRound:null }
+  match:{ round:0, wins:0, losses:0, history:[], clinchTier:null, clinchRound:null },
+  // post-match Czar bonus battle state
+  czarBonusActive:false, czarBeatable:null, pendingWin:null, pendingIsRug:null, baseTier:null,
 };
 
 /* =====================================================================
    REWARD TIER ASSIGNMENT
-   Rounds 1-2: random opponent (Czar excluded), standard odds:
+   All 3 rounds (regular opponents, never Czar) use the same odds:
      - 10% BOSS-TIER    -> win = WL
      - 25% CHALLENGER   -> win = FCFS WL
      - 20% RUG          -> rug-pull, no reward
      - 45% GRUNT        -> win = nothing special
-   Round 3: always Czar, the final boss character, different odds (every
-   encounter carries real stakes — no "grunt" tier at all):
-     - 5%  BOSS-TIER    -> win = WL
-     - 30% CHALLENGER   -> win = FCFS WL
-     - 65% RUG          -> rug-pull, no reward
    Best-of-3: whichever round CLINCHES the 2nd match win is the round
-   whose reward tier pays out (per user decision).
+   whose reward tier pays out.
+
+   THEN, once the best-of-3 is decided and announced, Czar enters for a
+   separate BONUS battle (see enterCzarBonus/setupCzarBattle below) —
+   only a 5% chance to beat him (locked in once per account, server-side,
+   so retrying the fight can't change your odds). Beating him upgrades
+   a RUG/FCFS/NONE result to guaranteed WL. Losing to him changes nothing
+   — your best-of-3 result stands either way. This is pure upside.
    ===================================================================== */
 const TIERS = {
   boss:      { key:'boss',      diff:5, reward:'WL',      rewardClass:'wl',
@@ -700,26 +704,22 @@ function drawEncounter(roundNum){
   if(S.freeMode){
     // free play: no reward tiers, no rug-pull narrative — just fights.
     // difficulty still ramps up each round for a real best-of-3 feel.
+    // Czar still shows up as round 3's flavor opponent here — free mode
+    // has no prizes and no bonus battle, so this is purely cosmetic.
     opp = isFinalRound ? (G.FINALBOSS || OPP[0]) : OPP[Math.floor(Math.random()*OPP.length)];
     tier = { key:'free', diff: isFinalRound?5:(roundNum===2?4:3), reward:'NONE', rewardClass:'none',
              desc:'Free play round.' };
     return {opp, tier};
   }
-  if(isFinalRound){
-    opp = G.FINALBOSS || {name:'Czar', img:'', head:''};
-    const r=Math.random();
-    if(r<0.05) tier=TIERS.boss;            // 5%
-    else if(r<0.35) tier=TIERS.challenger; // next 30%
-    else tier=TIERS.rug;                    // remaining 65%
-  } else {
-    // exclude nothing structurally — Czar's art only appears in round 3
-    opp = OPP[Math.floor(Math.random()*OPP.length)];
-    const r=Math.random();
-    if(r<0.10) tier=TIERS.boss;             // 10%
-    else if(r<0.35) tier=TIERS.challenger;  // next 25%
-    else if(r<0.55) tier=TIERS.rug;         // 20% rug
-    else tier=TIERS.grunt;                   // remaining 45%
-  }
+  // Whitelist-gate mode: all 3 rounds are regular opponents with the same
+  // odds. Czar never appears here — he's reserved for the bonus battle
+  // after the best-of-3 concludes.
+  opp = OPP[Math.floor(Math.random()*OPP.length)];
+  const r=Math.random();
+  if(r<0.10) tier=TIERS.boss;             // 10%
+  else if(r<0.35) tier=TIERS.challenger;  // next 25%
+  else if(r<0.55) tier=TIERS.rug;         // 20% rug
+  else tier=TIERS.grunt;                   // remaining 45%
   return {opp, tier};
 }
 
@@ -1549,7 +1549,8 @@ const show = G.show;
 
 /* ---------- BEST-OF-3 MATCH FLOW ---------- */
 G.startMatch = function(){
-  S.match = { round:0, wins:0, losses:0, history:[], clinchTier:null, clinchRound:null, czarBeatable:null };
+  S.match = { round:0, wins:0, losses:0, history:[], clinchTier:null, clinchRound:null };
+  S.czarBonusActive=false; S.czarBeatable=null; S.pendingWin=null; S.pendingIsRug=null; S.baseTier=null; S.czarResultText=null;
   advanceRound();
 };
 
@@ -1559,26 +1560,6 @@ async function advanceRound(){
   const enc = G.drawEncounter(m.round);
   S.opponent = enc.opp;
   S.tier = enc.tier;
-
-  if(m.round===3 && m.czarBeatable===null){
-    // Decide, once, whether this account can ever beat Czar. Whitelist
-    // mode: locked in server-side per X account (same result forever,
-    // even on replay). Free mode: no account to persist against, so we
-    // roll the same odds locally for just this session.
-    if(!S.freeMode && S.handle){
-      try{
-        const r = await G.apiFetch('/api/entries/'+encodeURIComponent(S.handle)+'/czar-roll', {method:'POST'});
-        m.czarBeatable = !!r.beatable;
-      }catch(err){
-        // If the server call fails for some reason, default to the 99% —
-        // never fail open into an easy win due to a network hiccup.
-        console.error('czar-roll failed, defaulting to unbeatable this run:', err);
-        m.czarBeatable = false;
-      }
-    } else {
-      m.czarBeatable = Math.random() < 0.01;
-    }
-  }
 
   G.buildVS();
   show('vs');
@@ -1598,14 +1579,19 @@ G.buildVS = function(){
     pips.appendChild(p);
   }
   const m=S.match;
-  $('roundBadge').textContent = m.round===3 ? 'FINAL ROUND — 3 OF 3' : ('ROUND '+m.round+' OF 3');
+  if(S.czarBonusActive){
+    $('roundBadge').textContent = 'BONUS BATTLE — BEAT CZAR';
+    $('fightRoundBadge').textContent = 'BONUS BATTLE';
+  } else {
+    $('roundBadge').textContent = 'ROUND '+m.round+' OF 3';
+    $('fightRoundBadge').textContent = 'ROUND '+m.round;
+  }
   const ms=$('matchScore'); ms.innerHTML='';
   for(let i=0;i<2;i++){
     const d=document.createElement('div');
     d.className='dot'+(i<m.wins?' win':(i<m.losses?' loss':''));
     ms.appendChild(d);
   }
-  $('fightRoundBadge').textContent = m.round===3?'FINAL ROUND':('ROUND '+m.round);
 };
 $('vsBtn').addEventListener('click',()=>{ startFight(); });
 
@@ -1623,10 +1609,12 @@ function startFight(){
 
   const eng = window.__FIGHTENGINE__;
   ENG = eng;
-  // In round 3, if this account isn't in the 1% who can beat Czar,
-  // rig this specific fight so a would-be KO on him instead triggers
-  // a scripted rally. Rounds 1-2 are never rigged.
-  const rigLoss = (S.match && S.match.round===3 && S.match.czarBeatable===false);
+  // Regular rounds (1-3): always a fair fight, no rigging — reward odds
+  // are handled by the tier draw, not by secretly capping the fight.
+  // Czar bonus battle: locked-in per-account 5% roll (S.czarBeatable) —
+  // if it came back false, this specific fight is rigged so a would-be
+  // KO on Czar instead triggers a scripted rally.
+  const rigLoss = S.czarBonusActive && S.czarBeatable===false;
   // ensure canvas is laid out before engine reads its size (mobile-safe)
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     eng.start({
@@ -1670,7 +1658,8 @@ function finishFight(win){
   bigMsg(win?'K.O.':'DEFEAT',0);
   setTimeout(()=>{
     if(ENG){ ENG.destroy(); ENG=null; }
-    handleRoundResult(win);
+    if(S.czarBonusActive){ czarBonusResult(win); }
+    else { handleRoundResult(win); }
   }, 1300);
 }
 
@@ -1714,14 +1703,79 @@ function roundTransition(win){
 function concludeMatch(){
   const m=S.match;
   const matchWin = m.wins>=2;
-  // reward still comes from whichever round clinched the 2nd win/loss —
-  // even though every player now sees all 3 rounds play out.
+  // base reward comes from whichever round clinched the 2nd win/loss
   S.tier = m.clinchTier || S.tier;
   if(matchWin && m.clinchTier && m.clinchTier.key==='rug'){
-    G.playRug(false);
+    G.playRug(false); // dramatic beat, then flows into the Czar bonus phase
   } else {
-    G.showResult(matchWin);
+    G.enterCzarBonus(matchWin, false);
   }
+}
+
+/* =====================================================================
+   CZAR BONUS BATTLE
+   Runs once the best-of-3 is fully decided. Announces that result, then
+   Czar enters for one more fight — a real, locked-in 5% chance (rolled
+   once per account, server-side) to beat him. Beating him upgrades a
+   RUG/FCFS/NONE result to guaranteed WL. Losing to him changes nothing:
+   your best-of-3 result stands exactly as already decided. Pure upside,
+   never a downgrade.
+   ===================================================================== */
+G.enterCzarBonus = function(baseWin, baseIsRug){
+  S.pendingWin = baseWin;
+  S.pendingIsRug = baseIsRug;
+  S.baseTier = S.tier; // preserve the best-of-3's clinching tier
+
+  const c=$('centermsg');
+  const label = baseWin ? 'MATCH WON '+S.match.wins+'-'+S.match.losses : 'MATCH LOST '+S.match.losses+'-'+S.match.wins;
+  c.innerHTML = '<div class="big display" style="font-size:clamp(30px,9vw,64px);color:'+
+    (baseWin?'var(--acid)':'var(--rug)')+'">'+label+'</div>';
+  setTimeout(()=>{
+    c.innerHTML = '<div class="big display" style="font-size:clamp(26px,8vw,54px);color:var(--rug)">CZAR ENTERS</div>';
+    setTimeout(()=>{ c.innerHTML=''; setupCzarBattle(); }, 1500);
+  }, 1500);
+};
+
+async function setupCzarBattle(){
+  S.opponent = G.FINALBOSS || {name:'Czar', img:'', head:''};
+  S.tier = { key:'czar_bonus', diff:5, reward:null, rewardClass:'wl', desc:'' };
+  S.czarBonusActive = true;
+
+  // Lock in, once ever per account, whether this account can beat Czar.
+  // Server-side so retrying the fight can never change the odds.
+  if(S.handle){
+    try{
+      const r = await G.apiFetch('/api/entries/'+encodeURIComponent(S.handle)+'/czar-roll', {method:'POST'});
+      S.czarBeatable = !!r.beatable;
+    }catch(err){
+      console.error('czar-roll failed, defaulting to unbeatable this attempt:', err);
+      S.czarBeatable = false; // never fail open into a free win on a network hiccup
+    }
+  } else {
+    S.czarBeatable = Math.random() < 0.05;
+  }
+
+  G.buildVS();
+  show('vs');
+}
+
+function czarBonusResult(beatCzar){
+  S.czarBonusActive = false;
+  S.match.history.push({round:'czar_bonus', opponent:'Czar', win:beatCzar});
+
+  let win, isRug;
+  if(beatCzar){
+    // Pure upside: force the top tier regardless of the base result.
+    S.tier = TIERS.boss;
+    win = true; isRug = false;
+    S.czarResultText = 'You beat Czar in the bonus battle — upgraded to a guaranteed whitelist spot!';
+  } else {
+    // Nothing changes — the best-of-3 result stands exactly as decided.
+    S.tier = S.baseTier;
+    win = S.pendingWin; isRug = S.pendingIsRug;
+    S.czarResultText = 'Czar proved too strong. Your best-of-3 result stands.';
+  }
+  G.showResult(win, isRug);
 }
 
 /* ---------- controls ---------- */
@@ -1798,7 +1852,7 @@ G.playRug = function(midMatch){
   // 4) either continue the match (round win, but rugged) or conclude it
   setTimeout(()=>{
     if(midMatch){ G.nextRound(); }
-    else { G.showResult(S.match.wins>=2, true); }
+    else { G.enterCzarBonus(S.match.wins>=2, true); }
   }, 3400);
 };
 
@@ -1846,6 +1900,12 @@ G.showResult = function(win, isRug){
     finish='DEFEAT'; finishClass=''; resLabel='MATCH LOST';
     reward='NO WL'; rewardClass='none';
     desc='You lost the match '+S.match.losses+'-'+S.match.wins+'. No whitelist this time.'; S.reward='NONE';
+  }
+
+  // Append the Czar bonus battle outcome, if this result came after one.
+  if(S.czarResultText){
+    desc = desc + ' ' + S.czarResultText;
+    S.czarResultText = null;
   }
 
   $('finishWord').textContent=finish;
@@ -1919,6 +1979,7 @@ $('playAgainBtn').addEventListener('click',()=>{
   // reset session (new play requires new X handle per rules)
   S.handle=null;S.chosen=null;S.opponent=null;S.tier=null;S.outcome=null;S.reward=null;
   S.match={round:0,wins:0,losses:0,history:[],clinchTier:null,clinchRound:null};
+  S.czarBonusActive=false;S.czarBeatable=null;S.pendingWin=null;S.pendingIsRug=null;S.baseTier=null;S.czarResultText=null;
   $('xname').value='';
   $('wallet').value='';
   $('walletErr').textContent='';
