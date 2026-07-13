@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS entries (
   clinch_round   INTEGER,
   match_history  TEXT,                    -- JSON string
   wallet         TEXT,                    -- filled in once claimed (may equal a wallets.address)
-  czar_beatable  INTEGER,                 -- 0/1/NULL — NULL = not yet rolled
+  czar_beatable  INTEGER,                 -- 0/1/NULL — NULL = not yet rolled (bonus battle, post-match)
   entered_at     TEXT NOT NULL,           -- ISO 8601, set by the app
   finished_at    TEXT
 );

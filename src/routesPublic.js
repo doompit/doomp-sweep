@@ -72,12 +72,12 @@ router.post('/entries', (req, res) => {
 
 /* =====================================================================
    POST /api/entries/:handle/czar-roll
-   Rolls (once, ever) whether this account is in the 1% who can beat
-   Czar in round 3. If already rolled, returns the same locked-in result
-   every time — no re-rolling on replay. SQLite only allows one writer
-   at a time, so wrapping the read-then-conditionally-write in a single
-   transaction makes this safe against concurrent requests for the same
-   handle: the second request's transaction waits for the first to
+   Rolls (once, ever) whether this account can beat Czar in the post-match
+   bonus battle. If already rolled, returns the same locked-in result every
+   time — no re-rolling by retrying the fight. SQLite only allows one
+   writer at a time, so wrapping the read-then-conditionally-write in a
+   single transaction makes this safe against concurrent requests for the
+   same handle: the second request's transaction waits for the first to
    commit, then sees the already-set value and skips the write.
    ===================================================================== */
 router.post('/entries/:handle/czar-roll', (req, res) => {
@@ -95,9 +95,9 @@ router.post('/entries/:handle/czar-roll', (req, res) => {
 
       let beatable = existing.czar_beatable;
       if (beatable === null) {
-        // CZAR_WIN_CHANCE: probability (0-1) that this account can ever
-        // beat Czar. Change this single constant to retune the odds.
-        const CZAR_WIN_CHANCE = 0.01;
+        // CZAR_WIN_CHANCE: probability (0-1) of beating Czar in the bonus
+        // battle. Change this single constant to retune the odds.
+        const CZAR_WIN_CHANCE = 0.05;
         beatable = Math.random() < CZAR_WIN_CHANCE ? 1 : 0;
         db.prepare('UPDATE entries SET czar_beatable = ? WHERE normalized = ?').run(beatable, normalized);
       }
